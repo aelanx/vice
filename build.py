@@ -1,0 +1,67 @@
+import re
+from os import path
+from subprocess import Popen, check_output, PIPE
+from sys import stdout
+from glob import glob
+
+functions = {
+	'sss_getCursorType': 0x0C98C738,
+	'isButtonDown': 0x0D09884C
+}
+
+source_files = [path.basename(p).split('.')[0] for p in glob('src/*.s')]
+
+# assemble
+for name in source_files:
+	with open('src/'+name+'.s', 'r') as file:
+		file_data = file.read()
+		file_data = '.include "inc/common.s"\n' + file_data + '\n'
+
+		p = Popen(['powerpc-eabi-as', '-o', 'bin/'+name+'.o', '--'], stdin=PIPE)
+		p.communicate(file_data)
+
+object_files = ['bin/'+name+'.o' for name in source_files]
+
+# collect section addresses
+sections = []
+for obj_file in object_files:
+	data = check_output(['powerpc-eabi-objdump', '-D', obj_file])
+	lines = data.split('\r\n')
+	for line in lines:
+		m = re.match('Disassembly of section \.(.*):', line)
+		if m != None:
+			sections.append(m.group(1))
+
+# build linker script
+with open('bin/link.ld', 'w') as file:
+	for func_name in functions:
+		file.write('%s = 0x%08X;\n' % (func_name, functions[func_name]))
+
+	file.write('\nSECTIONS {')
+	for section in sections:
+		file.write('\n\t. = %s;\n' % section)
+		file.write('\t.%s : {}\n' % section)
+	file.write('}\n')
+
+# link objects
+check_output(['powerpc-eabi-ld', '-T', 'bin/link.ld', '-o', 'bin/out.elf'] + object_files)
+
+# build final output
+output = ''
+data = check_output(['powerpc-eabi-objdump', '-D', 'bin/out.elf'])
+lines = data.split('\r\n')
+for line in lines:
+	m = re.match('Disassembly of section \.(.*):', line)
+	if m != None:
+		output += '\n@' + m.group(1)[2:] + '\n'
+		continue
+
+	m = re.match(' [0-9a-f]{7}:\t(.. .. .. .. )\t(.*)', line)
+
+	if m != None:
+		output += '  ' + m.group(1).replace(' ', '') + ' # ' + m.group(2) + '\n'
+		continue
+
+print output
+with open('bin/code.txt', 'w') as file:
+	file.write(output)
