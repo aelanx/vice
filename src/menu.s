@@ -7,6 +7,7 @@ code 0x0C24B1A4, "boot to menu"
 # button sequence tweaks
 code 0x0CC88148, "smash tour -> css"
 	b 0x144
+
 # code 0x0CC88278, "notices -> softlock :v" # wait, what? why?
 # 	b 0x14C
 
