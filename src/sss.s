@@ -1,9 +1,9 @@
 # # TODO: fix start button
 # # TODO: disable stricken stages (works for 8-player)
-# code 0x0C24694C, "stage striking 1"
+# code 0x0224694C, "stage striking 1"
 #   b new_end
 #
-# code 0x0C69BC80, "stage striking 2"
+# code 0x0269BC80, "stage striking 2"
 # new_end:
 #   lwz r3, 0x160(r27)
 #   bl sss_getCursorType
