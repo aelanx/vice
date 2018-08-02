@@ -1,16 +1,34 @@
 import re
-from os import path, linesep
+import struct
+import os
 from subprocess import Popen, check_output, PIPE
 from sys import stdout
 from glob import glob
-import struct
 
-functions = {
-    'sss_getCursorType': 0x0C98C738,
-    'isButtonDown': 0x0D09884C
-}
+functions = { }
 
-source_files = [path.splitext(path.basename(p))[0] for p in glob('src/*.s')]
+if not os.path.exists('bin'):
+    os.makedirs('bin')
+
+# load functions from map file
+with open('cross_f.map') as file:
+    lines = file.read().split('\n')
+    for line in lines:
+        m = re.match(' 0002:([0-9A-F]{8})\s+(.*)', line)
+        if m == None: continue
+
+        name = m.group(2)
+        if name.startswith('nullsub'): continue
+        if name.startswith('jpt_'): continue
+        if name.startswith('def_'): continue
+        if name.startswith('j_'): continue
+        if ' ' in name: continue
+
+        name = re.sub('[^a-zA-Z0-9_]', '_', name)
+
+        functions[name] = int(m.group(1), 16)
+
+source_files = [os.path.basename(p).split('.')[0] for p in glob('src/*.s')]
 
 # assemble
 for name in source_files:
@@ -48,46 +66,37 @@ with open('bin/link.ld', 'w') as file:
 check_output(['powerpc-eabi-ld', '-T', 'bin/link.ld', '-o', 'bin/out.elf'] + object_files)
 
 # build final output
-data = check_output(['powerpc-eabi-objdump', '-D', 'bin/out.elf'])
-
 codes = []
-currentCode = None
+current_code = None
 
-lines = data.split(linesep)
+output = ''
+data = check_output(['powerpc-eabi-objdump', '-D', 'bin/out.elf'])
+lines = data.split('\r\n')
+
 for line in lines:
-    # start of code
     m = re.match('Disassembly of section \.(.*):', line)
     if m != None:
-        if currentCode != None:
-            codes.append(currentCode)
-
-        currentCode = {
-            'address': m.group(1)[2:],
-            'instructions': []
-        }
+        if current_code != None: codes.append(current_code)
+        current_code = (int(m.group(1)[2:], 16), [])
         continue
 
-    # instruction
-    m = re.match(' [0-9a-f]{7}:\t(.. .. .. .. )\t(.*)', line)
+    m = re.match(' ?[0-9a-f]{7,8}:\t(.. .. .. .. )\t(.*)', line)
+
     if m != None:
-        currentCode['instructions'].append(m.group(1).replace(' ', ''))
+        current_code[1].append(int(m.group(1).replace(' ', ''), 16));
         continue
 
-def writeu32be (file, value):
-    file.write(struct.pack(">I", value))
+def uint32(i):
+    return struct.pack('>L', i)
 
-#
-with open('bin/codes.bin', 'w') as file:
-    writeu32be(file, 0x4D4F4453) # magic "MODS"
-    writeu32be(file, 1) # version
-    writeu32be(file, len(codes))
-    writeu32be(file, 0) # pad
-
+with open('0005000010144F00.mods', 'wb') as f:
+    f.write('MODS'.encode('ascii'))
+    f.write(uint32(1))
+    f.write(uint32(len(codes)))
+    f.write(uint32(0))
     for code in codes:
-        writeu32be(file, 0) # type
-        writeu32be(file, int(code['address'], 16))
-        writeu32be(file, len(code['instructions']))
-
-        for inst in code['instructions']:
-            writeu32be(file, int(inst, 16))
-
+        f.write(uint32(0))
+        f.write(uint32(code[0]))
+        f.write(uint32(len(code[1])))
+        for instr in code[1]:
+            f.write(uint32(instr))
