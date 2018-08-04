@@ -86,6 +86,8 @@ for line in lines:
         current_code[1].append(int(m.group(1).replace(' ', ''), 16));
         continue
 
+codes.append(current_code)
+
 def uint32(i):
     return struct.pack('>L', i)
 
